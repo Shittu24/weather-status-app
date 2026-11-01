@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weather Status</title><style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0b1721;color:#eaf3f6}*{box-sizing:border-box}body{margin:0}main{max-width:850px;margin:8vh auto;padding:24px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid #30414e;padding-bottom:22px}.brand{font-weight:750;letter-spacing:.05em}.badge{font-size:12px;color:#a8ead6;background:#183e36;border-radius:30px;padding:8px 12px}h1{font-size:clamp(36px,7vw,64px);letter-spacing:-.05em;line-height:1.05;margin:48px 0 18px}p{color:#a9bdcb;line-height:1.7}form{display:flex;gap:10px;margin:24px 0}select{width:100%;background:#122735;color:white;padding:8px;border:1px solid #395061;border-radius:10px;margin-top:8px}option{padding:10px}input,button{font:inherit;border-radius:10px;padding:15px;border:1px solid #395061}input{width:100%;background:#122735;color:white}button{background:#a4eed7;color:#0c3029;font-weight:700;white-space:nowrap;cursor:pointer}button:disabled{opacity:.6}label{display:block;margin-top:30px}article{border:1px solid #304b5c;border-radius:18px;background:#132938;padding:30px;margin-top:30px}.temp{font-size:68px;font-weight:700;margin:12px 0}small{color:#a9bdcb}footer{margin-top:40px;color:#829ba9;font-size:13px}#error{color:#ffb6aa}a{color:#a4eed7}@media(max-width:480px){form{flex-direction:column}header{align-items:start}}
+</style></head><body><main><header><span class="brand">WEATHER / STATUS</span><span class="badge" id="mode">Checking provider...</span></header>
+<h1>A little weather.<br>A reliable foundation.</h1><p>Start typing a city and select its state and country from the suggestions.</p>
+<form id="search"><div style="flex:1"><label for="city">City</label><input id="city" name="city" maxlength="80" required placeholder="Start typing a city..." autocomplete="off" aria-describedby="hint"><label for="locations" id="locations-label" hidden>Matching cities</label><select id="locations" size="5" hidden aria-label="Matching cities"></select></div><button id="submit" style="align-self:end" type="submit">Check weather →</button></form>
+<small id="hint" role="status">Type at least two letters, then select a city.</small><p id="error" role="alert"></p>
+<article id="result" hidden aria-live="polite"><small id="result-label">WEATHER SNAPSHOT</small><h2 id="place"></h2><div class="temp" id="temperature"></div><p id="condition"></p><small id="observation"></small></article>
+<footer>Weather Status · Local foundation · <a href="/docs">API reference</a><p>Weather data: <a href="https://open-meteo.com/">Open-Meteo</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>). Locations: <a href="https://www.geonames.org/">GeoNames</a>. Conditions are model-based estimates, not safety advice.</p></footer>
+</main><script>
+const form=document.querySelector('#search'),button=document.querySelector('#submit'),error=document.querySelector('#error'),result=document.querySelector('#result');
+const input=document.querySelector('#city'),list=document.querySelector('#locations'),hint=document.querySelector('#hint'),listLabel=document.querySelector('#locations-label');
+let selected=null,timer,searchController,weatherController,generation=0;
+button.disabled=true;
+fetch('/version').then(r=>r.json()).then(v=>{document.querySelector('#mode').textContent=v.mode==='mock'?'Offline demo':'Live - Open-Meteo';}).catch(()=>{document.querySelector('#mode').textContent='Provider status unavailable';});
+function closeList(){list.hidden=true;listLabel.hidden=true;list.replaceChildren();}
+input.addEventListener('input',()=>{
+  clearTimeout(timer);searchController?.abort();weatherController?.abort();generation++;
+  selected=null;button.disabled=true;result.hidden=true;error.textContent='';closeList();
+  const query=input.value.trim(),version=generation;
+  if(query.length<2){hint.textContent='Type at least two letters, then select a city.';return;}
+  hint.textContent='Searching cities...';
+  timer=setTimeout(async()=>{
+    searchController=new AbortController();
+    try{
+      const response=await fetch('/api/locations?q='+encodeURIComponent(query),{signal:AbortSignal.any([searchController.signal,AbortSignal.timeout(6000)])});
+      const data=await response.json();if(version!==generation)return;
+      if(!response.ok)throw new Error(data.detail||'City search unavailable.');
+      data.results.forEach(place=>{const option=document.createElement('option');option.textContent=place.label;option.value=JSON.stringify(place);list.append(option);});
+      list.selectedIndex=-1;list.hidden=!data.results.length;listLabel.hidden=list.hidden;
+      hint.textContent=data.results.length?'Select a city below. Use Arrow Down to move into the list.':'No cities found. Try another spelling or add a country.';
+    }catch(e){if(version===generation&&e.name!=='AbortError')hint.textContent='City search unavailable. Please try again.';}
+  },350);
+});
+input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&!list.hidden){e.preventDefault();list.focus();}if(e.key==='Escape'){generation++;searchController?.abort();clearTimeout(timer);closeList();}});
+list.addEventListener('change',()=>{
+  selected=JSON.parse(list.value);input.value=selected.label;button.disabled=false;closeList();button.focus();loadWeather();
+});
+form.addEventListener('submit',e=>{e.preventDefault();if(selected)loadWeather();});
+async function loadWeather(){
+  weatherController?.abort();weatherController=new AbortController();const version=++generation;
+  button.disabled=true;error.textContent='';result.hidden=true;hint.textContent='Loading weather...';
+  try{
+    const query=selected.id===null?'city='+encodeURIComponent(selected.label):'location_id='+selected.id;
+    const response=await fetch('/api/weather?'+query,{signal:AbortSignal.any([weatherController.signal,AbortSignal.timeout(8000)])});
+    const data=await response.json();if(version!==generation)return;
+    if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Unable to load weather.');
+    document.querySelector('#place').textContent=data.city;
+    document.querySelector('#temperature').textContent=data.temperature+' \u00b0'+data.unit;
+    document.querySelector('#condition').textContent=data.condition;
+    document.querySelector('#result-label').textContent=data.demo?'DEMO WEATHER SNAPSHOT':'CURRENT CONDITIONS - OPEN-METEO';
+    document.querySelector('#observation').textContent=(data.demo?'Sample time: ':'Model valid time: ')+data.observed_at;
+    result.hidden=false;hint.textContent='Select another city or refresh its weather.';
+  }catch(e){if(version===generation&&e.name!=='AbortError'){error.textContent=e.name==='TimeoutError'?'Request timed out. Please retry.':e.message;hint.textContent='You can retry using Check weather.';}}
+  finally{if(version===generation)button.disabled=!selected;}
+}
+</script></body></html>

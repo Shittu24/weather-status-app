@@ -1,0 +1,14 @@
+services:
+  weather:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      WEATHER_MODE: ${WEATHER_MODE:-openmeteo}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
