@@ -64,3 +64,9 @@ def test_logs_exclude_query(client, caplog):
         client.get('/api/weather?city=PRIVATE_CITY')
     assert 'PRIVATE_CITY' not in caplog.text
     assert 'duration_ms' in caplog.text
+
+
+def test_release_commit_matches_build_metadata(monkeypatch):
+    """Exercise the release gate before adding the build environment fixture."""
+    with TestClient(create_app(mode="mock")) as client:
+        assert client.get('/version').json()['commit'] == 'portfolio-release-demo'
