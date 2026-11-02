@@ -67,6 +67,7 @@ def test_logs_exclude_query(client, caplog):
 
 
 def test_release_commit_matches_build_metadata(monkeypatch):
-    """Exercise the release gate before adding the build environment fixture."""
+    """Expose build metadata so operators can verify deployments and rollbacks."""
+    monkeypatch.setenv("APP_COMMIT", "portfolio-release-demo")
     with TestClient(create_app(mode="mock")) as client:
         assert client.get('/version').json()['commit'] == 'portfolio-release-demo'
